@@ -119,7 +119,6 @@ public struct ImageRequest: CustomStringConvertible {
                 userInfo: [UserInfoKey: Any]? = nil) {
         self.ref = Container(
             resource: Resource.url(url),
-            imageId: url.absoluteString,
             processors: processors,
             priority: priority,
             options: options,
@@ -149,7 +148,6 @@ public struct ImageRequest: CustomStringConvertible {
                 userInfo: [UserInfoKey: Any]? = nil) {
         self.ref = Container(
             resource: Resource.urlRequest(urlRequest),
-            imageId: urlRequest.url?.absoluteString,
             processors: processors,
             priority: priority,
             options: options,
@@ -189,8 +187,7 @@ public struct ImageRequest: CustomStringConvertible {
         // pipeline by using a custom DataLoader, disabling resumable data, and
         // passing a publisher in the request userInfo.
         self.ref = Container(
-            resource: .publisher(AnyPublisher(data)),
-            imageId: id,
+            resource: .publisher(DataPublisher(id: id, data)),
             processors: processors,
             priority: priority,
             options: options,
@@ -253,12 +250,17 @@ public struct ImageRequest: CustomStringConvertible {
     /// Just like many Swift built-in types, `ImageRequest` uses CoW approach to
     /// avoid memberwise retain/releases when `ImageRequest` is passed around.
     final class Container {
+        // It's benefitial to put resource before priority and options because
+        // of the resource size/stride of 9/16. Priority (1 byte) and Options
+        // (2 bytes) slot just right in the remaining space.
         let resource: Resource
-        let imageId: String? // memoized absoluteString
         fileprivate(set) var priority: Priority
         fileprivate(set) var options: Options
         fileprivate(set) var processors: [ImageProcessing]?
         fileprivate(set) var userInfo: [UserInfoKey: Any]?
+        // After trimming down the request size, it is no longer
+        // as beneficial using CoW for ImageRequest, but there
+        // still is a small but measurable difference.
 
         deinit {
             #if TRACK_ALLOCATIONS
@@ -267,9 +269,8 @@ public struct ImageRequest: CustomStringConvertible {
         }
 
         /// Creates a resource with a default processor.
-        init(resource: Resource, imageId: String?, processors: [ImageProcessing]?, priority: Priority, options: Options, userInfo: [UserInfoKey: Any]?) {
+        init(resource: Resource, processors: [ImageProcessing]?, priority: Priority, options: Options, userInfo: [UserInfoKey: Any]?) {
             self.resource = resource
-            self.imageId = imageId
             self.processors = processors
             self.priority = priority
             self.options = options
@@ -283,7 +284,6 @@ public struct ImageRequest: CustomStringConvertible {
         /// Creates a copy.
         init(_ ref: Container) {
             self.resource = ref.resource
-            self.imageId = ref.imageId
             self.processors = ref.processors
             self.priority = ref.priority
             self.options = ref.options
@@ -298,7 +298,7 @@ public struct ImageRequest: CustomStringConvertible {
     enum Resource: CustomStringConvertible {
         case url(URL)
         case urlRequest(URLRequest)
-        case publisher(AnyPublisher<Data>)
+        case publisher(DataPublisher)
 
         var description: String {
             switch self {
@@ -313,10 +313,10 @@ public struct ImageRequest: CustomStringConvertible {
         """
         ImageRequest {
             resource: \(ref.resource),
-            priority: \(ref.priority),
-            processors: \(ref.processors ?? []),
-            options: \(ref.options),
-            userInfo: \(ref.userInfo ?? [:])
+            priority: \(priority),
+            processors: \(processors),
+            options: \(options),
+            userInfo: \(userInfo)
         }
         """
     }
@@ -327,14 +327,22 @@ public struct ImageRequest: CustomStringConvertible {
         return request
     }
 
+    var imageId: String? {
+        switch ref.resource {
+        case .url(let url): return url.absoluteString
+        case .urlRequest(let urlRequest): return urlRequest.url?.absoluteString
+        case .publisher(let publisher): return publisher.id
+        }
+    }
+
     var preferredImageId: String {
         if let imageId = ref.userInfo?[.imageIdKey] as? String {
             return imageId
         }
-        return ref.imageId ?? ""
+        return imageId ?? ""
     }
 
-    var publisher: AnyPublisher<Data>? {
+    var publisher: DataPublisher? {
         guard case .publisher(let publisher) = ref.resource else {
             return nil
         }

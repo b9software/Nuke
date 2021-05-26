@@ -43,6 +43,7 @@ struct CacheKey: Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(imageId)
+        hasher.combine(processors?.count ?? 0)
     }
 
     static func == (lhs: CacheKey, rhs: CacheKey) -> Bool {
@@ -70,7 +71,7 @@ struct DataLoadKey: Hashable {
     private let allowsCellularAccess: Bool
 
     init(_ request: ImageRequest) {
-        self.imageId = request.ref.imageId
+        self.imageId = request.imageId
         switch request.ref.resource {
         case .url, .publisher:
             self.cachePolicy = .useProtocolCachePolicy
@@ -87,7 +88,7 @@ struct ImageProcessingKey: Equatable, Hashable {
     let processorId: AnyHashable
 
     init(image: ImageResponse, processor: ImageProcessing) {
-        self.imageId = ObjectIdentifier(image)
+        self.imageId = ObjectIdentifier(image.image)
         self.processorId = processor.hashableIdentifier
     }
 }

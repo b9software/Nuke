@@ -23,11 +23,6 @@ public final class ImageTask: Hashable, CustomStringConvertible {
 
     let isDataTask: Bool
 
-    weak var pipeline: ImagePipeline?
-
-    /// The original request with which the task was created.
-    public let request: ImageRequest
-
     /// Updates the priority of the task, even if the task is already running.
     public var priority: ImageRequest.Priority {
         didSet {
@@ -35,6 +30,12 @@ public final class ImageTask: Hashable, CustomStringConvertible {
         }
     }
     var _priority: ImageRequest.Priority // Backing store for access from pipeline
+    // Putting all smaller units closer together (1 byte / 1 byte / 1 byte)
+
+    weak var pipeline: ImagePipeline?
+
+    /// The original request with which the task was created.
+    public let request: ImageRequest
 
     /// The number of bytes that the task has received.
     public internal(set) var completedUnitCount: Int64 = 0
@@ -165,7 +166,7 @@ public struct ImageContainer {
 // MARK: - ImageResponse
 
 /// Represents a response of a particular image task.
-public final class ImageResponse {
+public struct ImageResponse {
     public let container: ImageContainer
     /// A convenience computed property which returns an image from the container.
     public var image: PlatformImage { container.image }

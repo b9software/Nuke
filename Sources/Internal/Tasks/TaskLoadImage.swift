@@ -21,7 +21,7 @@ final class TaskLoadImage: ImagePipelineTask<ImageResponse> {
         }
 
         // Disk cache lookup
-        if let dataCache = pipeline.configuration.dataCache,
+        if let dataCache = pipeline.delegate.dataCache(for: request, pipeline: pipeline),
            !request.options.contains(.disableDiskCacheReads) {
             operation = pipeline.configuration.dataCachingQueue.add { [weak self] in
                 self?.getCachedData(dataCache: dataCache)
@@ -52,7 +52,7 @@ final class TaskLoadImage: ImagePipelineTask<ImageResponse> {
         guard !isDisposed else { return }
 
         let context = ImageDecodingContext(request: request, data: data, isCompleted: true, urlResponse: nil)
-        guard let decoder = pipeline.delegate.pipeline(pipeline, imageDecoderFor: context) else {
+        guard let decoder = pipeline.delegate.imageDecoder(for: context, pipeline: pipeline) else {
             // This shouldn't happen in practice unless encoder/decoder pair
             // for data cache is misconfigured.
             return fetchImage()
@@ -244,19 +244,23 @@ final class TaskLoadImage: ImagePipelineTask<ImageResponse> {
         guard !response.container.isPreview else {
             return
         }
-        guard let dataCache = pipeline.configuration.dataCache, shouldStoreFinalImageInDiskCache() else {
+        guard let dataCache = pipeline.delegate.dataCache(for: request, pipeline: pipeline), shouldStoreFinalImageInDiskCache() else {
             return
         }
         let context = ImageEncodingContext(request: request, image: response.image, urlResponse: response.urlResponse)
-        let encoder = pipeline.delegate.pipeline(pipeline, imageEncoderFor: context)
+        let encoder = pipeline.delegate.imageEncoder(for: context, pipeline: pipeline)
         let key = pipeline.cache.makeDataCacheKey(for: request)
-        pipeline.configuration.imageEncodingQueue.addOperation {
+        pipeline.configuration.imageEncodingQueue.addOperation { [weak pipeline, request] in
+            guard let pipeline = pipeline else { return }
             let encodedData = signpost(log, "EncodeImage") {
                 encoder.encode(response.container, context: context)
             }
             guard let data = encodedData else { return }
-            // Important! Storing directly ignoring `ImageRequest.Options`.
-            dataCache.storeData(data, for: key) // This is instant, writes are async
+            pipeline.delegate.willCache(data: data, image: response.container, for: request, pipeline: pipeline) {
+                guard let data = $0 else { return }
+                // Important! Storing directly ignoring `ImageRequest.Options`.
+                dataCache.storeData(data, for: key) // This is instant, writes are async
+            }
         }
         if pipeline.configuration.debugIsSyncImageEncoding { // Only for debug
             pipeline.configuration.imageEncodingQueue.waitUntilAllOperationsAreFinished()

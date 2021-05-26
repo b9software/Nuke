@@ -1,5 +1,11 @@
 # Nuke 9
 
+## Nuke 9.6.1
+
+*May 24, 2021*
+
+- Remove some risky `DataLoader` optimizations
+
 ## Nuke 9.6.0
 
 *May 2, 2021*
@@ -1081,7 +1087,7 @@ Add support for both Swift 3.2 and 4.0.
 
 ## Nuke 5.0
 
-* Feb 1, 2017*
+*Feb 1, 2017*
 
 ### Overview
 
