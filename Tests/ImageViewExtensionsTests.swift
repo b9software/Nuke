@@ -56,6 +56,27 @@ class ImageViewExtensionsTests: XCTestCase {
         XCTAssertNotNil(imageView.image)
     }
 
+    func testLoadImageWithNilRequest() {
+        // WHEN
+        imageView.image = Test.image
+        Nuke.loadImage(with: nil, into: imageView)
+
+        // THEN
+        XCTAssertNil(imageView.image)
+    }
+
+    func testLoadImageWithNilRequestAndPlaceholder() {
+        // GIVEN
+        let failureImage = Test.image
+
+        // WHEN
+        let options = ImageLoadingOptions(failureImage: failureImage)
+        Nuke.loadImage(with: nil, options: options, into: imageView)
+
+        // THEN failure image is displayed
+        XCTAssertTrue(imageView.image === failureImage)
+    }
+
     // MARK: - Managing Tasks
 
     func testTaskReturned() {
@@ -591,4 +612,17 @@ class ImageViewLoadingOptionsTests: XCTestCase {
         // it doesn't crash
     }
     #endif
+
+    func testSettingDefaultProcessor() {
+        // GIVEN
+        var options = ImageLoadingOptions()
+        options.processors = [MockImageProcessor(id: "p1")]
+
+        // WHEN
+        expectToFinishLoadingImage(with: Test.request, options: options, into: imageView)
+        wait()
+
+        // THEN
+        XCTAssertEqual(imageView.image?.nk_test_processorIDs, ["p1"])
+    }
 }

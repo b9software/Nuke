@@ -17,7 +17,7 @@ public struct ImageRequest: CustomStringConvertible {
     /// Returns `nil` for publisher-based requests.
     public var urlRequest: URLRequest? {
         switch ref.resource {
-        case .url(let url): return URLRequest(url: url) // create lazily
+        case .url(let url): return url.map { URLRequest(url: $0) } // create lazily
         case .urlRequest(let urlRequest): return urlRequest
         case .publisher: return nil
         }
@@ -31,6 +31,16 @@ public struct ImageRequest: CustomStringConvertible {
         case .url(let url): return url
         case .urlRequest(let request): return request.url
         case .publisher: return nil
+        }
+    }
+
+    /// Returns the ID of the underlying image. For URL-based request, it's an
+    /// image URL. For publisher – a custom ID.
+    public var imageId: String? {
+        switch ref.resource {
+        case .url(let url): return url?.absoluteString
+        case .urlRequest(let urlRequest): return urlRequest.url?.absoluteString
+        case .publisher(let publisher): return publisher.id
         }
     }
 
@@ -88,7 +98,7 @@ public struct ImageRequest: CustomStringConvertible {
         ///
         /// ```
         /// let request = ImageRequest(
-        ///     url: URL(string: "http://example.com/image.jpeg?token=123")!,
+        ///     url: URL(string: "http://example.com/image.jpeg?token=123"),
         ///     userInfo: [.imageIdKey: "http://example.com/image.jpeg"]
         /// )
         /// ```
@@ -107,12 +117,12 @@ public struct ImageRequest: CustomStringConvertible {
     ///
     /// ```swift
     /// let request = ImageRequest(
-    ///     url: URL(string: "http://...")!,
+    ///     url: URL(string: "http://..."),
     ///     processors: [ImageProcessors.Resize(size: imageView.bounds.size)],
     ///     priority: .high
     /// )
     /// ```
-    public init(url: URL,
+    public init(url: URL?,
                 processors: [ImageProcessing]? = nil,
                 priority: Priority = .normal,
                 options: Options = [],
@@ -136,7 +146,7 @@ public struct ImageRequest: CustomStringConvertible {
     ///
     /// ```swift
     /// let request = ImageRequest(
-    ///     url: URLRequest(url: URL(string: "http://...")!),
+    ///     url: URLRequest(url: URL(string: "http://...")),
     ///     processors: [ImageProcessors.Resize(size: imageView.bounds.size)],
     ///     priority: .high
     /// )
@@ -296,13 +306,13 @@ public struct ImageRequest: CustomStringConvertible {
     }
 
     enum Resource: CustomStringConvertible {
-        case url(URL)
+        case url(URL?)
         case urlRequest(URLRequest)
         case publisher(DataPublisher)
 
         var description: String {
             switch self {
-            case .url(let url): return "\(url)"
+            case .url(let url): return "\(url?.absoluteString ?? "nil")"
             case .urlRequest(let urlRequest): return "\(urlRequest)"
             case .publisher(let data): return "\(data)"
             }
@@ -325,14 +335,6 @@ public struct ImageRequest: CustomStringConvertible {
         var request = self
         request.processors = processors
         return request
-    }
-
-    var imageId: String? {
-        switch ref.resource {
-        case .url(let url): return url.absoluteString
-        case .urlRequest(let urlRequest): return urlRequest.url?.absoluteString
-        case .publisher(let publisher): return publisher.id
-        }
     }
 
     var preferredImageId: String {
@@ -368,6 +370,12 @@ extension URL: ImageRequestConvertible {
     }
 }
 
+extension Optional: ImageRequestConvertible where Wrapped == URL {
+    public func asImageRequest() -> ImageRequest {
+        ImageRequest(url: self)
+    }
+}
+
 extension URLRequest: ImageRequestConvertible {
     public func asImageRequest() -> ImageRequest {
         ImageRequest(urlRequest: self)
@@ -376,6 +384,6 @@ extension URLRequest: ImageRequestConvertible {
 
 extension String: ImageRequestConvertible {
     public func asImageRequest() -> ImageRequest {
-        ImageRequest(url: URL(string: self) ?? URL(fileURLWithPath: "/dev/null"))
+        ImageRequest(url: URL(string: self))
     }
 }

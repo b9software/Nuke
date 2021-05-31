@@ -84,11 +84,16 @@ extension WKInterfaceImage: Nuke_ImageDisplaying {
 
 // MARK: - ImageView Extensions
 
+/// Loads an image with the given request and displays it in the view.
+///
+/// See the complete method signature for more information.
 @discardableResult
-public func loadImage(with request: ImageRequestConvertible,
-                      options: ImageLoadingOptions = ImageLoadingOptions.shared,
-                      into view: ImageDisplayingView,
-                      completion: @escaping (_ result: Result<ImageResponse, ImagePipeline.Error>) -> Void) -> ImageTask? {
+public func loadImage(
+    with request: ImageRequestConvertible?,
+    options: ImageLoadingOptions = ImageLoadingOptions.shared,
+    into view: ImageDisplayingView,
+    completion: @escaping (_ result: Result<ImageResponse, ImagePipeline.Error>) -> Void
+) -> ImageTask? {
     loadImage(with: request, options: options, into: view, progress: nil, completion: completion)
 }
 
@@ -103,6 +108,8 @@ public func loadImage(with request: ImageRequestConvertible,
 /// completes the loaded image is displayed (or `failureImage` in case of an error)
 /// with the selected animation.
 ///
+/// - parameter request: The image request. If `nil`, it's handled as a failure
+/// scenario.
 /// - parameter options: `ImageLoadingOptions.shared` by default.
 /// - parameter view: Nuke keeps a weak reference to the view. If the view is deallocated
 /// the associated request automatically gets canceled.
@@ -113,14 +120,16 @@ public func loadImage(with request: ImageRequestConvertible,
 /// the memory cache. `nil` by default.
 /// - returns: An image task or `nil` if the image was found in the memory cache.
 @discardableResult
-public func loadImage(with request: ImageRequestConvertible,
-                      options: ImageLoadingOptions = ImageLoadingOptions.shared,
-                      into view: ImageDisplayingView,
-                      progress: ((_ intermediateResponse: ImageResponse?, _ completedUnitCount: Int64, _ totalUnitCount: Int64) -> Void)? = nil,
-                      completion: ((_ result: Result<ImageResponse, ImagePipeline.Error>) -> Void)? = nil) -> ImageTask? {
+public func loadImage(
+    with request: ImageRequestConvertible?,
+    options: ImageLoadingOptions = ImageLoadingOptions.shared,
+    into view: ImageDisplayingView,
+    progress: ((_ response: ImageResponse?, _ completed: Int64, _ total: Int64) -> Void)? = nil,
+    completion: ((_ result: Result<ImageResponse, ImagePipeline.Error>) -> Void)? = nil
+) -> ImageTask? {
     assert(Thread.isMainThread)
     let controller = ImageViewController.controller(for: view)
-    return controller.loadImage(with: request.asImageRequest(), options: options, progress: progress, completion: completion)
+    return controller.loadImage(with: request?.asImageRequest(), options: options, progress: progress, completion: completion)
 }
 
 /// Cancels an outstanding request associated with the view.
@@ -180,6 +189,9 @@ public struct ImageLoadingOptions {
 
     /// Custom pipeline to be used. `nil` by default.
     public var pipeline: ImagePipeline?
+
+    /// The default processors to be applied to the images. `nil` by default.
+    public var processors: [ImageProcessing]?
 
     #if os(iOS) || os(tvOS)
 
@@ -392,15 +404,19 @@ private final class ImageViewController {
 
     // MARK: - Loading Images
 
-    func loadImage(with request: ImageRequest,
-                   options: ImageLoadingOptions,
-                   progress progressHandler: ((_ intermediateResponse: ImageResponse?, _ completedUnitCount: Int64, _ totalUnitCount: Int64) -> Void)? = nil,
-                   completion: ((_ result: Result<ImageResponse, ImagePipeline.Error>) -> Void)? = nil) -> ImageTask? {
+    func loadImage(
+        with request: ImageRequest?,
+        options: ImageLoadingOptions,
+        progress: ((_ response: ImageResponse?, _ completed: Int64, _ total: Int64) -> Void)? = nil,
+        completion: ((_ result: Result<ImageResponse, ImagePipeline.Error>) -> Void)? = nil
+    ) -> ImageTask? {
         cancelOutstandingTask()
 
         guard let imageView = imageView else {
             return nil
         }
+
+        self.options = options
 
         if options.isPrepareForReuseEnabled { // enabled by default
             #if os(iOS) || os(tvOS)
@@ -411,9 +427,22 @@ private final class ImageViewController {
             #endif
         }
 
+        // Handle a scenario where request is `nil` (in the same way as a failure)
+        guard let unwrappedRequest = request else {
+            if options.isPrepareForReuseEnabled {
+                imageView.nuke_display(image: nil, data: nil)
+            }
+            let result: Result<ImageResponse, ImagePipeline.Error> = .failure(.dataLoadingFailed(URLError(.unknown)))
+            handle(result: result, isFromMemory: true)
+            completion?(result)
+            return nil
+        }
+
         let pipeline = options.pipeline ?? ImagePipeline.shared
-        let request = pipeline.configuration.inheritOptions(request)
-        self.options = options
+        var request = pipeline.configuration.inheritOptions(unwrappedRequest)
+        if let processors = options.processors, request.processors.isEmpty {
+            request.processors = processors
+        }
 
         // Quick synchronous memory cache lookup.
         if let image = pipeline.cache[request] {
@@ -435,9 +464,9 @@ private final class ImageViewController {
             if let response = response, options.isProgressiveRenderingEnabled {
                 self?.handle(partialImage: response)
             }
-            progressHandler?(response, completedCount, totalCount)
+            progress?(response, completedCount, totalCount)
         }, completion: { [weak self] result in
-            self?.handle(result: result, fromMemCache: false)
+            self?.handle(result: result, isFromMemory: false)
             completion?(result)
         })
         return task
@@ -450,13 +479,13 @@ private final class ImageViewController {
 
     // MARK: - Handling Responses
 
-    private func handle(result: Result<ImageResponse, ImagePipeline.Error>, fromMemCache: Bool) {
+    private func handle(result: Result<ImageResponse, ImagePipeline.Error>, isFromMemory: Bool) {
         switch result {
         case let .success(response):
-            display(response.container, fromMemCache, .success)
+            display(response.container, isFromMemory, .success)
         case .failure:
             if let failureImage = options.failureImage {
-                display(ImageContainer(image: failureImage), fromMemCache, .failure)
+                display(ImageContainer(image: failureImage), isFromMemory, .failure)
             }
         }
         self.task = nil
@@ -468,7 +497,7 @@ private final class ImageViewController {
 
     #if os(iOS) || os(tvOS) || os(macOS)
 
-    private func display(_ image: ImageContainer, _ fromMemCache: Bool, _ response: ImageLoadingOptions.ResponseType) {
+    private func display(_ image: ImageContainer, _ isFromMemory: Bool, _ response: ImageLoadingOptions.ResponseType) {
         guard let imageView = imageView else {
             return
         }
@@ -482,7 +511,7 @@ private final class ImageViewController {
         }
         #endif
 
-        if !fromMemCache || options.alwaysTransition, let transition = options.transition(for: response) {
+        if !isFromMemory || options.alwaysTransition, let transition = options.transition(for: response) {
             switch transition.style {
             case let .fadeIn(params):
                 runFadeInTransition(image: image, params: params, response: response)
@@ -504,8 +533,8 @@ private final class ImageViewController {
 
     #elseif os(watchOS)
 
-    private func display(_ image: ImageContainer, _ fromMemCache: Bool, _ response: ImageLoadingOptions.ResponseType) {
-        imageView?.display(response.container)
+    private func display(_ image: ImageContainer, _ isFromMemory: Bool, _ response: ImageLoadingOptions.ResponseType) {
+        imageView?.display(image)
     }
 
     #endif

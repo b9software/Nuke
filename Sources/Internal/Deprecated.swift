@@ -83,7 +83,7 @@ public protocol ImagePipelineObserving {
 }
 
 // Deprecated in 10.0.0
-@available(*, deprecated, message: "See the deprecation warnings for invidual properties for migration guidelines.")
+@available(*, deprecated, message: "Please use the new initializer with `ImageRequest.Options`. It offers the same options and more. For more information see the migration guide at https://github.com/kean/Nuke/blob/master/Documentation/Migrations/Nuke%2010%20Migration%20Guide.md#imagerequestoptions.")
 public struct ImageRequestOptions {
     // Deprecated in 10.0.0
     @available(*, deprecated, message: "Please use `ImagePipeline.Options` instead: `disableMemoryCacheRead`, `disableMemoryCacheWrite`.")
@@ -104,32 +104,20 @@ public struct ImageRequestOptions {
     public var memoryCacheOptions: MemoryCacheOptions
 
     // Deprecated in 10.0.0
-    @available(*, deprecated, message: "Please use `ImagePipeline.Delegate` instead. This API does nothing starting with Nuke 10.")
-    var cacheKey: AnyHashable? {
-        get { nil }
-        set { debugPrint("The ImageRequestOptions.cacheKey API does nothing starting with Nuke 10") } // swiftlint:disable:this unused_setter_value
-    }
+    @available(*, deprecated, message: "Please pass ")
+    var cacheKey: AnyHashable?
 
     // Deprecated in 10.0.0
     @available(*, deprecated, message: "This API does nothing starting with Nuke 10. If you found an issue in coalescing, please report it on GitHub and consider disabling it using ImagePipeline.Configuration.")
-    var loadKey: AnyHashable? {
-        get { nil }
-        set { debugPrint("The ImageRequestOptions.loadKey API does nothing starting with Nuke 10") } // swiftlint:disable:this unused_setter_value
-    }
+    var loadKey: AnyHashable?
 
     // Deprecated in 10.0.0
-    @available(*, deprecated, message: "Please pass imageId (`ImageRequest.UserInfoKey.imageId`) in the request `userInfo`. The deprecated API does nothing starting with Nuke 10.")
-    var filteredURL: AnyHashable? {
-        get { nil }
-        set { debugPrint("The ImageRequestOptions.filteredURL API does nothing starting with Nuke 10") } // swiftlint:disable:this unused_setter_value
-    }
+    @available(*, deprecated, message: "Please pass imageId (`ImageRequest.UserInfoKey.imageIdKey`) in the request `userInfo`. The deprecated API does nothing starting with Nuke 10.")
+    var filteredURL: AnyHashable?
 
     // Deprecated in 10.0.0
     @available(*, deprecated, message: "Please pass the `userInfo` directly to the request. The deprecated API does nothing starting with Nuke 10.")
-    var userInfo: [AnyHashable: Any] {
-        get { [:] }
-        set { debugPrint("The ImageRequestOptions.userInfo API does nothing starting with Nuke 10") } // swiftlint:disable:this unused_setter_value
-    }
+    var userInfo: [AnyHashable: Any]
 
     public init(memoryCacheOptions: MemoryCacheOptions = .init(),
                 filteredURL: String? = nil,
@@ -144,32 +132,35 @@ public struct ImageRequestOptions {
     }
 }
 
-public extension ImagePipeline.Configuration {
-    // Deprecated in 10.0.0
-    @available(*, deprecated, message: "Renamed to isTaskCoalescingEnabled")
-    var isDeduplicationEnabled: Bool {
-        get { isTaskCoalescingEnabled }
-        set { isTaskCoalescingEnabled = newValue }
-    }
-}
-
 public extension ImageRequest {
     // Deprecated in 10.0.0
-    @available(*, deprecated, message: "Please use `ImageRequest.Options` instead, it offers the same options under the same names.")
+    @available(*, deprecated, message: "Please use the new initializer with `ImageRequest.Options`. It offers the same options and more. For more information see the migration guide at https://github.com/kean/Nuke/blob/master/Documentation/Migrations/Nuke%2010%20Migration%20Guide.md#imagerequestoptions.")
     init(url: URL,
          processors: [ImageProcessing] = [],
          cachePolicy: CachePolicy,
-         priority: ImageRequest.Priority = .normal) {
-        self.init(url: url, processors: processors, priority: priority, options: .init(cachePolicy), userInfo: nil)
+         priority: ImageRequest.Priority = .normal,
+         options: ImageRequestOptions = .init()) {
+        var userInfo = [UserInfoKey: Any]()
+        if let filteredURL = options.filteredURL {
+            userInfo[.imageIdKey] = filteredURL
+        }
+        let options = ImageRequest.Options(cachePolicy, options)
+        self.init(url: url, processors: processors, priority: priority, options: options, userInfo: userInfo)
     }
 
     // Deprecated in 10.0.0
-    @available(*, deprecated, message: "Please use `ImageRequest.Options` instead, it offers the same options under the same names.")
+    @available(*, deprecated, message: "Please use the new initializer with `ImageRequest.Options`. It offers the same options and more. For more information see the migration guide at https://github.com/kean/Nuke/blob/master/Documentation/Migrations/Nuke%2010%20Migration%20Guide.md#imagerequestoptions")
     init(urlRequest: URLRequest,
          processors: [ImageProcessing] = [],
          cachePolicy: CachePolicy,
-         priority: ImageRequest.Priority = .normal) {
-        self.init(urlRequest: urlRequest, processors: processors, priority: priority, options: .init(cachePolicy), userInfo: nil)
+         priority: ImageRequest.Priority = .normal,
+         options: ImageRequestOptions = .init()) {
+        var userInfo = [UserInfoKey: Any]()
+        if let filteredURL = options.filteredURL {
+            userInfo[.imageIdKey] = filteredURL
+        }
+        let options = ImageRequest.Options(cachePolicy, options)
+        self.init(urlRequest: urlRequest, processors: processors, priority: priority, options: options, userInfo: userInfo)
     }
 
     // Deprecated in 10.0.0
@@ -190,17 +181,18 @@ public extension ImageRequest {
     }
 
     // Deprecated in 10.0.0
-    @available(*, deprecated, message: "Please use `ImageRequest.Options` instead, it offers the same options under the same names. .reloadIgnoringCachedData no longer affects URLCache!")
+    @available(*, deprecated, message: "Please use `ImageRequest.Options` instead, it offers the same options under the same names. And .reloadIgnoringCachedData no longer affects URLCache!")
     enum CachePolicy {
         case `default`
         /// The image should be loaded only from the originating source.
         ///
         /// If you initialize the request with `URLRequest`, make sure to provide
         /// the correct policy in the request too.
-        @available(*, deprecated, message: "Please use `ImageRequest.Options` instead, it offers the same options under the same names. .reloadIgnoringCachedData no longer affects URLCache!")
+        @available(*, deprecated, message: "Please use `ImageRequest.Options` instead. This option is available under the same name: .reloadIgnoringCachedData. This option is also no longer affects URLCache!")
         case reloadIgnoringCachedData
 
         /// Use existing cache data and fail if no cached data is available.
+        @available(*, deprecated, message: "Please use `ImageRequest.Options` instead. This option is available under the same name: .returnCacheDataDontLoad.")
         case returnCacheDataDontLoad
     }
 }
@@ -208,8 +200,8 @@ public extension ImageRequest {
 private extension ImageRequest.Options {
     // Deprecated in 10.0.0
     @available(*, deprecated, message: "Please use `ImageRequest.Options` instead, it offers the same options under the same names.")
-    init(_ policy: ImageRequest.CachePolicy) {
-        switch policy {
+    init(_ cachePolicy: ImageRequest.CachePolicy) {
+        switch cachePolicy {
         case .default:
             self = []
         case .reloadIgnoringCachedData:
@@ -217,6 +209,19 @@ private extension ImageRequest.Options {
         case .returnCacheDataDontLoad:
             self = .returnCacheDataDontLoad
         }
+    }
+
+    // Deprecated in 10.0.0
+    @available(*, deprecated, message: "Please use `ImageRequest.Options` instead, it offers the same options under the same names.")
+    init(_ cachePolicy: ImageRequest.CachePolicy, _ oldOptions: ImageRequestOptions) {
+        var options: ImageRequest.Options = .init(cachePolicy)
+        if !oldOptions.memoryCacheOptions.isReadAllowed {
+            options.insert(.disableMemoryCacheReads)
+        }
+        if !oldOptions.memoryCacheOptions.isWriteAllowed {
+            options.insert(.disableMemoryCacheWrites)
+        }
+        self = options
     }
 }
 
@@ -228,7 +233,7 @@ public extension ImageDecoders.Default {
 
 public extension ImagePipeline.Configuration {
     // Deprecated in 10.0.0
-    @available(*, deprecated, message: "Please use `ImageConatainer` `data` instead. The default image decoder now automatically attaches image data to the ImageContainer type. To learn how to implement animated image support using this new type, see the new Image Formats guide https://github.com/kean/Nuke/blob/9.6.0/Documentation/Guides/image-formats.md")
+    @available(*, deprecated, message: "Please use `ImageConatainer` `data` instead. The default image decoder now automatically attaches image data to the ImageContainer type. To learn how to implement animated image support using this new type, see the new Image Formats guide https://github.com/kean/Nuke/blob/9.6.0/Documentation/Guides/image-formats.md. Also see Nuke 10 migration guide https://github.com/kean/Nuke/blob/master/Documentation/Migrations/Nuke%2010%20Migration%20Guide.md.")
     static var isAnimatedImageDataEnabled: Bool {
         get { _isAnimatedImageDataEnabled }
         set { _isAnimatedImageDataEnabled = newValue }
@@ -238,6 +243,7 @@ public extension ImagePipeline.Configuration {
 private var _animatedImageDataAK = "Nuke.AnimatedImageData.AssociatedKey"
 
 extension PlatformImage {
+    // Deprecated in 10.0.0
     /// - warning: Soft-deprecated in Nuke 9.0.
     @available(*, deprecated, message: "Please use `ImageConatainer` `data` instead")
     public var animatedImageData: Data? {
@@ -258,5 +264,30 @@ extension ImagePipeline.Configuration {
     public init(dataLoader: DataLoading = DataLoader(), imageCache: ImageCaching?) {
         self.init(dataLoader: dataLoader)
         self.imageCache = imageCache
+    }
+
+    // Deprecated in 10.0.0
+    @available(*, deprecated, message: "Renamed to isTaskCoalescingEnabled")
+    public var isDeduplicationEnabled: Bool {
+        get { isTaskCoalescingEnabled }
+        set { isTaskCoalescingEnabled = newValue }
+    }
+
+    // Deprecated in 10.0.0
+    // There is simply no way to make it work consistently across subsystems.
+    @available(*, deprecated, message: "Deprecated and will be removed. Please use the new ImageLoadingOptions processors option, or create another way to apply processors by default.")
+    public var processors: [ImageProcessing] {
+        get { _processors }
+        set { _processors = newValue }
+    }
+
+    /// Inherits some of the pipeline configuration options like processors.
+    func inheritOptions(_ request: ImageRequest) -> ImageRequest {
+        guard !_processors.isEmpty, request.ref.processors == nil else {
+            return request
+        }
+        var request = request
+        request.processors = _processors
+        return request
     }
 }
