@@ -8,6 +8,7 @@ import os
 // MARK: - ImagePipeline.Configuration
 
 extension ImagePipeline {
+    /// The pipeline configuration.
     public struct Configuration {
         // MARK: - Dependencies
 
@@ -59,10 +60,6 @@ extension ImagePipeline {
         /// Image decompressing queue. Default maximum concurrent task count is 2.
         public var imageDecompressingQueue = OperationQueue(maxConcurrentCount: 2)
         #endif
-
-        // MARK: - Misc
-
-        var _processors: [ImageProcessing] = []
 
         // MARK: - Options
 
@@ -136,6 +133,9 @@ extension ImagePipeline {
             public var storedItems: Set<DataCacheItem> = [.originalImageData]
         }
 
+        // Deprecated in 10.0.0
+        var _processors: [ImageProcessing] = []
+
         /// `true` by default. If `true` the pipeline avoids duplicated work when
         /// loading images. The work only gets cancelled when all the registered
         /// requests are. The pipeline also automatically manages the priority of the
@@ -170,12 +170,12 @@ extension ImagePipeline {
         /// The decoder used by the image loading session determines whether
         /// to produce a partial image or not. The default image decoder
         /// (`ImageDecoder`) supports progressive JPEG decoding.
-        public var isProgressiveDecodingEnabled = false
+        public var isProgressiveDecodingEnabled = true
 
         /// `false` by default. If `true`, the pipeline will store all of the
         /// progressively generated previews in the memory cache. All of the
         /// previews have `isPreview` flag set to `true`.
-        public var isStoringPreviewsInMemoryCache = false
+        public var isStoringPreviewsInMemoryCache = true
 
         /// If the data task is terminated (either because of a failure or a
         /// cancellation) and the image was partially loaded, the next load will
@@ -205,8 +205,6 @@ extension ImagePipeline {
                     .disabled
             }
         }
-
-        static var isFastTrackDecodingEnabled = true
 
         private var isCustomImageCacheProvided = false
 
@@ -240,14 +238,5 @@ extension ImagePipeline {
 
             return config
         }
-    }
-}
-
-// MARK: - Helpers
-
-extension ImagePipeline.Configuration {
-    /// Fast-track decoding isn't performed on the operation queue.
-    static func isFastTrackDecodingEnabled(for decoder: ImageDecoding) -> Bool {
-        isFastTrackDecodingEnabled && (decoder is ImageDecoders.Default || decoder is ImageDecoders.Empty)
     }
 }

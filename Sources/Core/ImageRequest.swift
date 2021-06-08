@@ -69,8 +69,7 @@ public struct ImageRequest: CustomStringConvertible {
         set { mutate { $0.userInfo = newValue } }
     }
 
-    /// The priority of the request. The priority affects the order in which the
-    /// requests are performed.
+    /// The priority affecting the order in which the requests are performed.
     public enum Priority: Int, Comparable {
         case veryLow = 0, low, normal, high, veryHigh
 
@@ -186,7 +185,7 @@ public struct ImageRequest: CustomStringConvertible {
     ///
     /// - warning: If you don't want data to be stored in the disk cache, make
     /// sure to create a pipeline without it or disable it on a per-request basis.
-    /// You can also disable it dynamically using `ImagePipeline.Delegate`.
+    /// You can also disable it dynamically using `ImagePipelineDelegate`.
     @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
     public init<P>(id: String, data: P,
                    processors: [ImageProcessing]? = nil,
@@ -305,6 +304,7 @@ public struct ImageRequest: CustomStringConvertible {
         }
     }
 
+    // Every case takes 8 bytes and the enum 9 bytes overall (use stride!)
     enum Resource: CustomStringConvertible {
         case url(URL?)
         case urlRequest(URLRequest)
@@ -320,15 +320,7 @@ public struct ImageRequest: CustomStringConvertible {
     }
 
     public var description: String {
-        """
-        ImageRequest {
-            resource: \(ref.resource),
-            priority: \(priority),
-            processors: \(processors),
-            options: \(options),
-            userInfo: \(userInfo)
-        }
-        """
+        "ImageRequest(resource: \(ref.resource), priority: \(priority), processors: \(processors), options: \(options), userInfo: \(userInfo))"
     }
 
     func withProcessors(_ processors: [ImageProcessing]) -> ImageRequest {
@@ -354,6 +346,7 @@ public struct ImageRequest: CustomStringConvertible {
 
 // MARK: - ImageRequestConvertible
 
+/// Represents a type that can be converted to an `ImageRequest`.
 public protocol ImageRequestConvertible {
     func asImageRequest() -> ImageRequest
 }

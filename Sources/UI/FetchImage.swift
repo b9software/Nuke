@@ -5,21 +5,30 @@
 import SwiftUI
 import Combine
 
+/// An observable object that simplifies image loading in SwiftUI.
 @available(iOS 13.0, tvOS 13.0, watchOS 6.0, macOS 10.15, *)
 public final class FetchImage: ObservableObject, Identifiable {
     /// Returns the current fetch result.
-    @Published public private(set) var result: Result<ImageResponse, ImagePipeline.Error>?
+    @Published public private(set) var result: Result<ImageResponse, Error>?
 
     /// Returns the fetched image.
     ///
     /// - note: In case pipeline has `isProgressiveDecodingEnabled` option enabled
     /// and the image being downloaded supports progressive decoding, the `image`
     /// might be updated multiple times during the download.
-    @Published public private(set) var image: PlatformImage?
+    public var image: PlatformImage? { imageContainer?.image }
+
+    /// Returns the fetched image.
+    ///
+    /// - note: In case pipeline has `isProgressiveDecodingEnabled` option enabled
+    /// and the image being downloaded supports progressive decoding, the `image`
+    /// might be updated multiple times during the download.
+    @Published public private(set) var imageContainer: ImageContainer?
 
     /// Returns `true` if the image is being loaded.
     @Published public private(set) var isLoading: Bool = false
 
+    /// The download progress.
     public struct Progress: Equatable {
         /// The number of bytes that the task has received.
         public let completed: Int64
@@ -32,12 +41,33 @@ public final class FetchImage: ObservableObject, Identifiable {
     @Published public private(set) var progress = Progress(completed: 0, total: 0)
 
     /// Updates the priority of the task, even if the task is already running.
-    public var priority: ImageRequest.Priority = .normal {
-        didSet { task?.priority = priority }
+    /// `nil` by default
+    public var priority: ImageRequest.Priority? {
+        didSet { priority.map { imageTask?.priority = $0 } }
     }
 
+    /// Gets called when the request is started.
+    public var onStart: ((_ task: ImageTask) -> Void)?
+
+    /// Gets called when the request progress is updated.
+    public var onProgress: ((_ response: ImageResponse?, _ completed: Int64, _ total: Int64) -> Void)?
+
+    /// Gets called when the requests finished successfully.
+    public var onSuccess: ((_ response: ImageResponse) -> Void)?
+
+    /// Gets called when the requests fails.
+    public var onFailure: ((_ response: Error) -> Void)?
+
+    /// Gets called when the request is completed.
+    public var onCompletion: ((_ result: Result<ImageResponse, Error>) -> Void)?
+
     public var pipeline: ImagePipeline = .shared
-    private var task: ImageTask?
+
+    /// Image processors to be applied unless the processors are provided in the request.
+    /// `nil` by default.
+    public var processors: [ImageProcessing]?
+
+    private var imageTask: ImageTask?
 
     // publisher support
     private var lastResponse: ImageResponse?
@@ -51,47 +81,75 @@ public final class FetchImage: ObservableObject, Identifiable {
 
     // MARK: Load (ImageRequestConvertible)
 
-    /// Starts loading the image if not already loaded and the download is not
-    /// already in progress.
-    public func load(_ request: ImageRequestConvertible) {
+    /// Loads an image with the given request.
+    public func load(_ request: ImageRequestConvertible?) {
+        assert(Thread.isMainThread, "Must be called from the main thread")
+
         reset()
 
-        let request = request.asImageRequest()
+        guard var request = request?.asImageRequest() else {
+            handle(result: .failure(FetchImageError.sourceEmpty), isSync: true)
+            return
+        }
 
-        // Try to display the regular image if it is available in memory cache
-        if let container = pipeline.cache[request] {
-            image = container.image
-            result = .success(ImageResponse(container: container, urlResponse: nil, cacheType: .memory))
-            return // Nothing to do
+        if let processors = self.processors, !processors.isEmpty && request.processors.isEmpty {
+            request.processors = processors
+        }
+        if let priority = self.priority {
+            request.priority = priority
+        }
+
+        // Quick synchronous memory cache lookup
+        if let image = pipeline.cache[request] {
+            if image.isPreview {
+                imageContainer = image // Display progressive image
+            } else {
+                let response = ImageResponse(container: image, cacheType: .memory)
+                handle(result: .success(response), isSync: true)
+                return
+            }
         }
 
         isLoading = true
         progress = Progress(completed: 0, total: 0)
-        task = pipeline.loadImage(
+
+        let task = pipeline.loadImage(
             with: request,
             progress: { [weak self] response, completed, total in
                 guard let self = self else { return }
                 self.progress = Progress(completed: completed, total: total)
-                if let image = response?.image {
-                    self.image = image // Display progressively decoded image
+                if let response = response {
+                    self.handle(preview: response)
                 }
+                self.onProgress?(response, completed, total)
             },
             completion: { [weak self] in
-                self?.didFinishRequest(result: $0)
+                self?.handle(result: $0.mapError { $0 }, isSync: false)
             }
         )
-        if priority != request.priority {
-            task?.priority = priority
-        }
+        imageTask = task
+        onStart?(task)
     }
 
-    private func didFinishRequest(result: Result<ImageResponse, ImagePipeline.Error>) {
-        task = nil
+    private func handle(preview: ImageResponse) {
+        // Display progressively decoded image
+        self.imageContainer = preview.container
+    }
+
+    private func handle(result: Result<ImageResponse, Error>, isSync: Bool) {
         isLoading = false
+
         if case .success(let response) = result {
-            self.image = response.image
+            self.imageContainer = response.container
         }
         self.result = result
+
+        imageTask = nil
+        switch result {
+        case .success(let response): onSuccess?(response)
+        case .failure(let error): onFailure?(error)
+        }
+        onCompletion?(result)
     }
 
     // MARK: Load (Publisher)
@@ -101,10 +159,10 @@ public final class FetchImage: ObservableObject, Identifiable {
     /// - warning: Some `FetchImage` features, such as progress reporting and
     /// dynamically changing the request priority, are not available when
     /// working with a publisher.
-    public func load<P: Publisher>(_ publisher: P) where P.Output == ImageResponse, P.Failure == ImagePipeline.Error {
+    public func load<P: Publisher>(_ publisher: P) where P.Output == ImageResponse {
         reset()
 
-        // Not using `first()` because it also supported progressive decoding
+        // Not using `first()` because it should support progressive decoding
         isLoading = true
         cancellable = publisher.sink(receiveCompletion: { [weak self] completion in
             guard let self = self else { return }
@@ -120,7 +178,7 @@ public final class FetchImage: ObservableObject, Identifiable {
         }, receiveValue: { [weak self] response in
             guard let self = self else { return }
             self.lastResponse = response
-            self.image = response.image
+            self.imageContainer = response.container
         })
     }
 
@@ -130,8 +188,8 @@ public final class FetchImage: ObservableObject, Identifiable {
     /// image.
     public func cancel() {
         // pipeline-based
-        task?.cancel() // Guarantees that no more callbacks are will be delivered
-        task = nil
+        imageTask?.cancel() // Guarantees that no more callbacks are will be delivered
+        imageTask = nil
 
         // publisher-based
         cancellable = nil
@@ -147,7 +205,7 @@ public final class FetchImage: ObservableObject, Identifiable {
 
         // Avoid publishing unchanged values
         if isLoading { isLoading = false }
-        if image != nil { image = nil }
+        if imageContainer != nil { imageContainer = nil }
         if result != nil { result = nil }
         lastResponse = nil // publisher-only
         if progress != Progress(completed: 0, total: 0) { progress = Progress(completed: 0, total: 0) }
@@ -162,4 +220,8 @@ public final class FetchImage: ObservableObject, Identifiable {
         return image.map(Image.init(uiImage:))
         #endif
     }
+}
+
+public enum FetchImageError: Swift.Error {
+    case sourceEmpty
 }

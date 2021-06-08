@@ -4,17 +4,7 @@
 
 import Foundation
 
-extension ImagePipeline {
-    public typealias Delegate = ImagePipelineDelegate
-
-    public enum CacheKey<T> {
-        case `default`
-        case custom(key: T)
-    }
-}
-
-/// The pipeline delegate that allows you to customize the pipleine on the
-/// per-request level.
+/// A delegate that allows you to customize the pipleine on a per-request basis.
 ///
 /// - warning: The delegate methods are performed on the pipeline queue in the
 /// background.
@@ -38,7 +28,9 @@ public protocol ImagePipelineDelegate: AnyObject {
 
     /// Returns a cache key identifying the image produced for the given request
     /// (including image processors).
-    func cacheKey(for request: ImageRequest, pipeline: ImagePipeline) -> ImagePipeline.CacheKey<String>
+    ///
+    /// Return `nil` to use a default key.
+    func cacheKey(for request: ImageRequest, pipeline: ImagePipeline) -> String?
 
     /// Gets called when the pipeline is about to save data for the given request.
     /// The implementation must call the completion closure passing `non-nil` data
@@ -80,8 +72,8 @@ public extension ImagePipelineDelegate {
         pipeline.configuration.makeImageEncoder(context)
     }
 
-    func cacheKey(for request: ImageRequest, pipeline: ImagePipeline) -> ImagePipeline.CacheKey<String> {
-        .default
+    func cacheKey(for request: ImageRequest, pipeline: ImagePipeline) -> String? {
+        nil
     }
 
     func willCache(data: Data, image: ImageContainer?, for request: ImageRequest, pipeline: ImagePipeline, completion: @escaping (Data?) -> Void) {
@@ -93,6 +85,7 @@ public extension ImagePipelineDelegate {
     }
 }
 
+/// An image task event sent by the pipeline.
 public enum ImageTaskEvent {
     case started
     case cancelled

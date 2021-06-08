@@ -52,7 +52,7 @@ public extension ImageCaching {
     }
 }
 
-/// Memory cache with LRU cleanup policy (least recently used are removed first).
+/// An LRU memory cache.
 ///
 /// The elements stored in cache are automatically discarded if either *cost* or
 /// *count* limit is reached. The default cost limit represents a number of bytes
@@ -88,6 +88,10 @@ public final class ImageCache: ImageCaching {
     public var totalCost: Int {
         return impl.totalCost
     }
+
+    /// The maximum cost of an entry in proportion to the `costLimit`.
+    /// By default, `0.1`.
+    public var entryCostLimit: Double = 0.1
 
     /// The total number of items in the cache.
     public var totalCount: Int {
@@ -130,7 +134,13 @@ public final class ImageCache: ImageCaching {
         }
         set {
             if let image = newValue {
-                impl.set(image, forKey: key, cost: self.cost(for: image))
+                let cost = self.cost(for: image)
+                // Take care of overflow or cache size big enough to fit any
+                // resonable content (and also of costLimit = Int.max).
+                let sanitizedEntryLimit = max(0, min(entryCostLimit, 1))
+                if costLimit > 2147483647 || cost < Int(sanitizedEntryLimit * Double(costLimit)) {
+                    impl.set(image, forKey: key, cost: cost)
+                }
             } else {
                 impl.removeValue(forKey: key)
             }

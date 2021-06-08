@@ -4,22 +4,35 @@
 
 import Foundation
 
-/// `ImagePipeline` loads and caches images.
+/// `ImagePipeline` is the primary way to load images directly (without a UI).
 ///
-/// See [Nuke Docs](https://kean.blog/nuke/guides/image-pipeline) to learn more.
+/// The pipeline is fully customizable. You can change its configuration using
+/// `ImagePipeline.Configuration` type: set custom data loader and cache, configure
+/// image encoders and decoders, etc. You can also set an `ImagePipelineDelegate`
+/// to get even more granular control on a per-request basis.
 ///
-/// If you want to build a system that fits your specific needs, see `ImagePipeline.Configuration`
-/// for a list of the available options. You can set custom data loaders and caches, configure
-/// image encoders and decoders, change the number of concurrent operations for each
-/// individual stage, disable and enable features like deduplication and rate limiting, and more.
+/// See ["Image Pipeline"](https://kean.blog/nuke/guides/image-pipeline) to learn
+/// more about how to use the pipeline. You can also learn about they way it
+/// works internally in a [dedicated guide](https://kean.blog/nuke/guides/image-pipeline-guide).
+///
+/// `ImagePipeline` also suppors Combine. You can learn more in a dedicated
+/// [guide](https://kean.blog/nuke/guides/combine) with some common use-cases.
 ///
 /// `ImagePipeline` is fully thread-safe.
 public final class ImagePipeline {
+    /// Shared image pipeline.
+    public static var shared = ImagePipeline(configuration: .withURLCache)
+
+    /// The pipeline configuration.
     public let configuration: Configuration
+
+    /// Provides access to the underlying caching subsystems.
     public var cache: ImagePipeline.Cache { ImagePipeline.Cache(pipeline: self) }
+
     // Deprecated in 10.0.0
     @available(*, deprecated, message: "Please use ImagePipelineDelegate")
     public var observer: ImagePipelineObserving?
+
     let delegate: ImagePipelineDelegate // swiftlint:disable:this all
     private(set) var imageCache: ImageCache?
 
@@ -42,9 +55,6 @@ public final class ImagePipeline {
     let rateLimiter: RateLimiter?
     let id = UUID()
 
-    /// Shared image pipeline.
-    public static var shared = ImagePipeline(configuration: .withURLCache)
-
     deinit {
         _nextTaskId.deallocate()
 
@@ -58,7 +68,7 @@ public final class ImagePipeline {
     ///
     /// - parameter configuration: `Configuration()` by default.
     /// - parameter delegate: `nil` by default.
-    public init(configuration: Configuration = Configuration(), delegate: ImagePipeline.Delegate? = nil) {
+    public init(configuration: Configuration = Configuration(), delegate: ImagePipelineDelegate? = nil) {
         self.configuration = configuration
         self.rateLimiter = configuration.isRateLimiterEnabled ? RateLimiter(queue: queue) : nil
         self.delegate = delegate ?? ImagePipelineDefaultDelegate()
@@ -85,14 +95,15 @@ public final class ImagePipeline {
         #endif
     }
 
-    public convenience init(delegate: ImagePipeline.Delegate? = nil, _ configure: (inout ImagePipeline.Configuration) -> Void) {
+    public convenience init(delegate: ImagePipelineDelegate? = nil, _ configure: (inout ImagePipeline.Configuration) -> Void) {
         var configuration = ImagePipeline.Configuration()
         configure(&configuration)
         self.init(configuration: configuration, delegate: delegate)
     }
 
-    /// Invalidates the pipeline and cancels all outstanding tasks.
-    func invalidate() {
+    /// Invalidates the pipeline and cancels all outstanding tasks. No new
+    /// requests can be started.
+    public func invalidate() {
         queue.async {
             guard !self.isInvalidated else { return }
             self.isInvalidated = true
@@ -102,6 +113,7 @@ public final class ImagePipeline {
 
     // MARK: - Loading Images
 
+    /// Loads an image for the given request.
     @discardableResult public func loadImage(
         with request: ImageRequestConvertible,
         completion: @escaping (_ result: Result<ImageResponse, Error>) -> Void
@@ -111,8 +123,9 @@ public final class ImagePipeline {
 
     /// Loads an image for the given request.
     ///
-    /// See [Nuke Docs](https://kean.blog/nuke/guides/image-pipeline-guide) to learn more.
+    /// See [Nuke Docs](https://kean.blog/nuke/guides/image-pipeline) to learn more.
     ///
+    /// - parameter request: An image request.
     /// - parameter queue: A queue on which to execute `progress` and `completion`
     /// callbacks. By default, the pipeline uses `.main` queue.
     /// - parameter progress: A closure to be called periodically on the main thread
@@ -190,6 +203,8 @@ public final class ImagePipeline {
 
     // MARK: - Loading Image Data
 
+    /// Loads the image data for the given request. The data doesn't get decoded
+    /// or processed in any other way.
     @discardableResult public func loadData(
         with request: ImageRequestConvertible,
         completion: @escaping (Result<(data: Data, response: URLResponse?), Error>) -> Void
@@ -197,12 +212,14 @@ public final class ImagePipeline {
         loadData(with: request, queue: nil, progress: nil, completion: completion)
     }
 
-    /// Loads the image data for the given request. The data doesn't get decoded or processed in any
-    /// other way.
+    /// Loads the image data for the given request. The data doesn't get decoded
+    /// or processed in any other way.
     ///
-    /// You can call `loadImage(:)` for the request at any point after calling `loadData(:)`, the
-    /// pipeline will use the same operation to load the data, no duplicated work will be performed.
+    /// You can call `loadImage(:)` for the request at any point after calling
+    /// `loadData(:)`, the pipeline will use the same operation to load the data,
+    /// no duplicated work will be performed.
     ///
+    /// - parameter request: An image request.
     /// - parameter queue: A queue on which to execute `progress` and `completion`
     /// callbacks. By default, the pipeline uses `.main` queue.
     /// - parameter progress: A closure to be called periodically on the main thread
@@ -398,6 +415,7 @@ extension ImagePipeline: SendEventProtocol {
         (self as SendEventProtocol)._send(event, task)
     }
 
+    // Deprecated in 10.0.0
     @available(*, deprecated, message: "Please use ImagePipelineDelegate")
     func _send(_ event: ImageTaskEvent, _ task: ImageTask) {
         observer?.pipeline(self, imageTask: task, didReceiveEvent: event)

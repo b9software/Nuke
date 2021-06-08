@@ -21,6 +21,11 @@ import WatchKit
 /// - note: If you need additional information in the decoder, you can pass
 /// anything that you might need from the `ImageDecodingContext`.
 public protocol ImageDecoding {
+    /// Return `true` if you want the decoding to be performed on the decoding
+    /// queue (see `imageDecodingQueue`). If `false`, the decoding will be
+    /// performed synchronously on the pipeline operation queue. By default, `true`.
+    var isAsynchronous: Bool { get }
+
     /// Produces an image from the given image data.
     func decode(_ data: Data) -> ImageContainer?
 
@@ -32,10 +37,15 @@ public protocol ImageDecoding {
     func decodePartiallyDownloadedData(_ data: Data) -> ImageContainer?
 }
 
-public extension ImageDecoding {
+extension ImageDecoding {
+    /// Returns `true` by default.
+    public var isAsynchronous: Bool {
+        true
+    }
+
     /// The default implementation which simply returns `nil` (no progressive
     /// decoding available).
-    func decodePartiallyDownloadedData(_ data: Data) -> ImageContainer? {
+    public func decodePartiallyDownloadedData(_ data: Data) -> ImageContainer? {
         nil
     }
 }
@@ -59,20 +69,16 @@ extension ImageDecoding {
     }
 }
 
-public typealias ImageDecoder = ImageDecoders.Default
-
 // MARK: - ImageDecoders
 
+/// A namespace with all available decoders.
 public enum ImageDecoders {}
 
 // MARK: - ImageDecoders.Default
 
-// An image decoder that uses native APIs. Supports progressive decoding.
-// The decoder is stateful.
 extension ImageDecoders {
 
-    /// The default decoder which supports all of the formats natively supported
-    /// by the system.
+    /// A decoder that supports all of the formats natively supported by the system.
     ///
     /// - note: The decoder automatically sets the scale of the decoded images to
     /// match the scale of the screen.
@@ -87,7 +93,14 @@ extension ImageDecoders {
 
         private var container: ImageContainer?
 
+        private var isDecodingGIFProgressively = false
+        private var isPreviewForGIFGenerated = false
+
         public init() { }
+
+        public var isAsynchronous: Bool {
+            false
+        }
 
         public init?(data: Data, context: ImageDecodingContext) {
             guard let container = _decode(data) else {
@@ -97,13 +110,20 @@ extension ImageDecoders {
         }
 
         public init?(partiallyDownloadedData data: Data, context: ImageDecodingContext) {
+            let imageType = ImageType(data)
+
             // Determined whether the image supports progressive decoding or not
             // (only proressive JPEG is allowed for now, but you can add support
             // for other formats by implementing your own decoder).
-            guard ImageType(data) == .jpeg,
-                ImageProperties.JPEG(data)?.isProgressive == true else {
-                return nil
+            if imageType == .jpeg, ImageProperties.JPEG(data)?.isProgressive == true { return }
+
+            // Generate one preview for GIF.
+            if imageType == .gif {
+                self.isDecodingGIFProgressively = true
+                return
             }
+
+            return nil
         }
 
         public func decode(_ data: Data) -> ImageContainer? {
@@ -131,10 +151,18 @@ extension ImageDecoders {
         }
 
         public func decodePartiallyDownloadedData(_ data: Data) -> ImageContainer? {
+            if isDecodingGIFProgressively { // Special handling for GIF
+                if !isPreviewForGIFGenerated, let image = ImageDecoders.Default._decode(data) {
+                    isPreviewForGIFGenerated = true
+                    return ImageContainer(image: image, type: .gif, isPreview: true, data: nil, userInfo: [:])
+                }
+                return nil
+            }
+
             guard let endOfScan = scanner.scan(data), endOfScan > 0 else {
                 return nil
             }
-            guard let image = ImageDecoder._decode(data[0...endOfScan]) else {
+            guard let image = ImageDecoders.Default._decode(data[0...endOfScan]) else {
                 return nil
             }
             return ImageContainer(image: image, type: .jpeg, isPreview: true, userInfo: [.scanNumberKey: numberOfScans])
@@ -200,10 +228,14 @@ extension ImageDecoders.Default {
 // MARK: - ImageDecoders.Empty
 
 extension ImageDecoders {
-    /// A decoder which returns an empty placeholder image and attaches image
+    /// A decoder that returns an empty placeholder image and attaches image
     /// data to the image container.
     public struct Empty: ImageDecoding {
         public let isProgressive: Bool
+
+        public var isAsynchronous: Bool {
+            false
+        }
 
         /// - parameter isProgressive: If `false`, returns nil for every progressive
         /// scan. `false` by default.
@@ -249,7 +281,7 @@ public extension ImageDecoderRegistering {
 
 // MARK: - ImageDecoderRegistry
 
-/// A register of image codecs (only decoding).
+/// A registry of image codecs.
 public final class ImageDecoderRegistry {
     /// A shared registry.
     public static let shared = ImageDecoderRegistry()

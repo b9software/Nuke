@@ -24,7 +24,7 @@ Nuke is proudly sponsored by [Stream](https://getstream.io/?utm_source=github&ut
 
 Nuke is easy to learn and use thanks to beautiful [**Nuke Docs**](https://kean.blog/nuke/guides/welcome). Make sure to also check out [**Nuke Demo**](https://github.com/kean/NukeDemo).
 
-> Upgrading from the previous version? Use a [**Migration Guide**](https://github.com/kean/Nuke/blob/9.6.0/Documentation/Migrations).
+> Upgrading from the previous version? Use a [**Migration Guide**](https://github.com/kean/Nuke/blob/10.0.0/Documentation/Migrations). Switching from another framework? Use a [**Switching Guide**](https://github.com/kean/Nuke/tree/master/Documentation/Switch).
 
 <a href="https://kean.blog/nuke/guides/welcome">
 <img src="https://user-images.githubusercontent.com/1567433/114312077-59259b80-9abf-11eb-93f9-29fb87eb025a.png">
@@ -37,7 +37,7 @@ The image pipeline is easy to customize and extend. Check out the following firs
 
 |Name|Description|
 |--|--|
-|[**NukeUI**](https://github.com/kean/NukeUI)|A comprehensive solution for displaying lazily loaded images on Apple platforms|
+|[**NukeUI**](https://github.com/kean/NukeUI)|Lazy image loading for SwiftUI|
 |[**NukeBuilder**](https://github.com/kean/NukeBuilder)|A fun and convenient way to use Nuke|
 |[**Alamofire Plugin**](https://github.com/kean/Nuke-Alamofire-Plugin)|Replace networking layer with [Alamofire](https://github.com/Alamofire/Alamofire)|
 |[**RxNuke**](https://github.com/kean/RxNuke)|[RxSwift](https://github.com/ReactiveX/RxSwift) extensions for Nuke with examples|

@@ -4,10 +4,12 @@
 
 import Foundation
 
+/// A unit of work that can be cancelled.
 public protocol Cancellable: AnyObject {
     func cancel()
 }
 
+/// Fetches original image data.
 public protocol DataLoading {
     /// - parameter didReceiveData: Can be called multiple times if streaming
     /// is supported.
@@ -205,6 +207,7 @@ private final class _DataLoader: NSObject, URLSessionDataDelegate {
 
 // MARK: - DataLoaderObserving
 
+/// An event send by the data loader.
 public enum DataTaskEvent {
     case resumed
     case receivedResponse(response: URLResponse)
