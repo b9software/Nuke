@@ -95,6 +95,7 @@ extension ImageDecoders {
 
         private var isDecodingGIFProgressively = false
         private var isPreviewForGIFGenerated = false
+        private var scale: CGFloat?
 
         public init() { }
 
@@ -103,6 +104,8 @@ extension ImageDecoders {
         }
 
         public init?(data: Data, context: ImageDecodingContext) {
+            let scale = context.request.ref.userInfo?[.scaleKey]
+            self.scale = (scale as? NSNumber).map { CGFloat($0.floatValue) }
             guard let container = _decode(data) else {
                 return nil
             }
@@ -112,10 +115,14 @@ extension ImageDecoders {
         public init?(partiallyDownloadedData data: Data, context: ImageDecodingContext) {
             let imageType = ImageType(data)
 
+            self.scale = context.request.ref.userInfo?[.scaleKey] as? CGFloat
+
             // Determined whether the image supports progressive decoding or not
             // (only proressive JPEG is allowed for now, but you can add support
             // for other formats by implementing your own decoder).
-            if imageType == .jpeg, ImageProperties.JPEG(data)?.isProgressive == true { return }
+            if imageType == .jpeg, ImageProperties.JPEG(data)?.isProgressive == true {
+                return
+            }
 
             // Generate one preview for GIF.
             if imageType == .gif {
@@ -131,7 +138,7 @@ extension ImageDecoders {
         }
 
         private func _decode(_ data: Data) -> ImageContainer? {
-            guard let image = ImageDecoders.Default._decode(data) else {
+            guard let image = ImageDecoders.Default._decode(data, scale: scale) else {
                 return nil
             }
             // Keep original data around in case of GIF
@@ -152,7 +159,7 @@ extension ImageDecoders {
 
         public func decodePartiallyDownloadedData(_ data: Data) -> ImageContainer? {
             if isDecodingGIFProgressively { // Special handling for GIF
-                if !isPreviewForGIFGenerated, let image = ImageDecoders.Default._decode(data) {
+                if !isPreviewForGIFGenerated, let image = ImageDecoders.Default._decode(data, scale: scale) {
                     isPreviewForGIFGenerated = true
                     return ImageContainer(image: image, type: .gif, isPreview: true, data: nil, userInfo: [:])
                 }
@@ -162,7 +169,7 @@ extension ImageDecoders {
             guard let endOfScan = scanner.scan(data), endOfScan > 0 else {
                 return nil
             }
-            guard let image = ImageDecoders.Default._decode(data[0...endOfScan]) else {
+            guard let image = ImageDecoders.Default._decode(data[0...endOfScan], scale: scale) else {
                 return nil
             }
             return ImageContainer(image: image, type: .jpeg, isPreview: true, userInfo: [.scanNumberKey: numberOfScans])
@@ -216,11 +223,11 @@ private struct ProgressiveJPEGScanner {
 }
 
 extension ImageDecoders.Default {
-    static func _decode(_ data: Data) -> PlatformImage? {
+    static func _decode(_ data: Data, scale: CGFloat?) -> PlatformImage? {
         #if os(macOS)
         return NSImage(data: data)
         #else
-        return UIImage(data: data, scale: Screen.scale)
+        return UIImage(data: data, scale: scale ?? Screen.scale)
         #endif
     }
 }
@@ -232,23 +239,30 @@ extension ImageDecoders {
     /// data to the image container.
     public struct Empty: ImageDecoding {
         public let isProgressive: Bool
+        private let imageType: ImageType?
 
         public var isAsynchronous: Bool {
             false
         }
 
-        /// - parameter isProgressive: If `false`, returns nil for every progressive
-        /// scan. `false` by default.
-        public init(isProgressive: Bool = false) {
+        /// Initializes the decoder.
+        ///
+        /// - Parameters:
+        ///   - type: Image type to be associated with an image container.
+        ///   `nil` by defalt.
+        ///   - isProgressive: If `false`, returns nil for every progressive
+        ///   scan. `false` by default.
+        public init(imageType: ImageType? = nil, isProgressive: Bool = false) {
+            self.imageType = imageType
             self.isProgressive = isProgressive
         }
 
         public func decodePartiallyDownloadedData(_ data: Data) -> ImageContainer? {
-            isProgressive ? ImageContainer(image: PlatformImage(), data: data, userInfo: [:]) : nil
+            isProgressive ? ImageContainer(image: PlatformImage(), type: imageType, data: data, userInfo: [:]) : nil
         }
 
         public func decode(_ data: Data) -> ImageContainer? {
-            ImageContainer(image: PlatformImage(), data: data, userInfo: [:])
+            ImageContainer(image: PlatformImage(), type: imageType, data: data, userInfo: [:])
         }
     }
 }

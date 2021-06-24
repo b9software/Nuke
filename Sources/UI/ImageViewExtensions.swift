@@ -19,7 +19,7 @@ public typealias PlatformImage = NSImage
 /// them compatible with Nuke image loading extensions.
 ///
 /// The protocol is defined as `@objc` to make it possible to override its
-/// methods in extensions (e.g. you can override `nuke_display(image:)` in
+/// methods in extensions (e.g. you can override `nuke_display(image:data:)` in
 /// `UIImageView` subclass like `Gifu.ImageView).
 ///
 /// The protocol and its methods have prefixes to make sure they don't clash
@@ -52,7 +52,7 @@ public typealias ImageDisplayingView = UIView & Nuke_ImageDisplaying
 
 extension UIImageView: Nuke_ImageDisplaying {
     /// Displays an image.
-    open func nuke_display(image: UIImage?, data: Data?) {
+    open func nuke_display(image: UIImage?, data: Data? = nil) {
         self.image = image
     }
 }
@@ -64,7 +64,7 @@ public typealias ImageDisplayingView = NSObject & Nuke_ImageDisplaying
 
 extension NSImageView: Nuke_ImageDisplaying {
     /// Displays an image.
-    open func nuke_display(image: NSImage?, data: Data?) {
+    open func nuke_display(image: NSImage?, data: Data? = nil) {
         self.image = image
     }
 }
@@ -76,7 +76,7 @@ public typealias ImageDisplayingView = WKInterfaceObject & Nuke_ImageDisplaying
 
 extension WKInterfaceImage: Nuke_ImageDisplaying {
     /// Displays an image.
-    open func nuke_display(image: UIImage?, data: Data?) {
+    open func nuke_display(image: UIImage?, data: Data? = nil) {
         self.setImage(image)
     }
 }
